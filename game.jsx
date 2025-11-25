@@ -479,3 +479,5 @@ export default function TorusTicTacToe() {
     </div>
   );
 }
+
+ReactDOM.render(<TorusTicTacToe />, document.getElementById('root'));
