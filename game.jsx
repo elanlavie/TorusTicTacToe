@@ -480,4 +480,6 @@ export default function TorusTicTacToe() {
   );
 }
 
-ReactDOM.render(<TorusTicTacToe />, document.getElementById('root'));
+// At the very end of the file, after the component definition
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<TorusTicTacToe />);
