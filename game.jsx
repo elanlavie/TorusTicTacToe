@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { RotateCcw, User, Cpu, Grid3x3, Maximize2 } from 'lucide-react';
+const { useState, useEffect, useRef } = React;
+const { RotateCcw, User, Cpu, Grid3x3, Maximize2 } = lucide;
 
 export default function TorusTicTacToe() {
   const [board, setBoard] = useState(Array(9).fill(null));
