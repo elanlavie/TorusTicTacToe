@@ -1,0 +1,7 @@
+/* Optional extra styling */
+canvas {
+  display: block;
+}
+svg {
+  user-select: none;
+}
