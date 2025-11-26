@@ -1,5 +1,6 @@
+
 const { useState, useEffect, useRef } = React;
-const { RotateCcw, User, Cpu, Grid3x3, Maximize2 } = lucide;
+const { RotateCcw, User, Cpu, Grid3x3, Maximize2, Box } = lucide;
 
 export default function TorusTicTacToe() {
   const [board, setBoard] = useState(Array(9).fill(null));
@@ -7,16 +8,19 @@ export default function TorusTicTacToe() {
   const [winner, setWinner] = useState(null);
   const [winningLine, setWinningLine] = useState([]);
   const [allLines, setAllLines] = useState([]);
-  const [gameMode, setGameMode] = useState(null); // null, 'human', 'computer'
+  const [gameMode, setGameMode] = useState(null);
   const [isComputerThinking, setIsComputerThinking] = useState(false);
-  const [viewMode, setViewMode] = useState('compact'); // 'compact' or 'infinite'
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [viewMode, setViewMode] = useState('compact');
+  const [infinitePanOffset, setInfinitePanOffset] = useState({ x: 0, y: 0 });
+  const [compactPanOffset, setCompactPanOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [hasDragged, setHasDragged] = useState(false);
   const canvasRef = useRef(null);
+  const compactCanvasRef = useRef(null);
+  const torusContainerRef = useRef(null);
+  const torusSceneRef = useRef(null);
 
-  // Map 4x4 visual position (0-15) to 3x3 logical position (0-8)
   const visualToLogical = (visualPos) => {
     const mapping = {
       0: 0,  3: 0,  12: 0, 15: 0,
@@ -32,7 +36,6 @@ export default function TorusTicTacToe() {
     return mapping[visualPos];
   };
 
-  // Generate all valid winning lines on a 3x3 torus
   useEffect(() => {
     const lines = new Set();
     
@@ -64,6 +67,162 @@ export default function TorusTicTacToe() {
     setAllLines(linesArray);
   }, []);
 
+  useEffect(() => {
+    if (viewMode !== '3d' || !torusContainerRef.current) return;
+    
+    const THREE = window.THREE;
+    if (!THREE) {
+      console.log('Three.js not available');
+      return;
+    }
+
+    while (torusContainerRef.current.firstChild) {
+      torusContainerRef.current.removeChild(torusContainerRef.current.firstChild);
+    }
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xf0f4f8);
+
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(5, 3, 5);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(600, 600);
+    torusContainerRef.current.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    scene.add(ambientLight);
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    directionalLight.position.set(5, 5, 5);
+    scene.add(directionalLight);
+
+    const torusGeometry = new THREE.TorusGeometry(2, 0.8, 16, 32);
+    const torusMaterial = new THREE.MeshPhongMaterial({
+      color: 0xe0e0e0,
+      transparent: true,
+      opacity: 0.3,
+      side: THREE.DoubleSide
+    });
+    const torusMesh = new THREE.Mesh(torusGeometry, torusMaterial);
+    scene.add(torusMesh);
+
+    torusSceneRef.current = {
+      scene,
+      camera,
+      renderer,
+      torusMesh,
+      gridGroup: new THREE.Group()
+    };
+    
+    scene.add(torusSceneRef.current.gridGroup);
+
+    let animationId;
+    const animate = () => {
+      animationId = requestAnimationFrame(animate);
+      torusMesh.rotation.x += 0.002;
+      torusMesh.rotation.y += 0.003;
+      if (torusSceneRef.current.gridGroup) {
+        torusSceneRef.current.gridGroup.rotation.x += 0.002;
+        torusSceneRef.current.gridGroup.rotation.y += 0.003;
+      }
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    return () => {
+      cancelAnimationFrame(animationId);
+      if (torusContainerRef.current && renderer.domElement) {
+        torusContainerRef.current.removeChild(renderer.domElement);
+      }
+      renderer.dispose();
+      torusSceneRef.current = null;
+    };
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== '3d' || !torusSceneRef.current) return;
+    
+    const THREE = window.THREE;
+    if (!THREE) return;
+
+    const { scene, gridGroup } = torusSceneRef.current;
+    
+    while (gridGroup.children.length > 0) {
+      const child = gridGroup.children[0];
+      gridGroup.remove(child);
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (child.material.map) child.material.map.dispose();
+        child.material.dispose();
+      }
+    }
+
+    const R = 2;
+    const r = 0.8;
+
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const logicalPos = i * 3 + j;
+        const value = board[logicalPos];
+        const isWinning = winningLine.includes(logicalPos);
+
+        const u = (j / 3) * Math.PI * 2;
+        const v = (i / 3) * Math.PI * 2;
+
+        const x = (R + r * Math.cos(v)) * Math.cos(u);
+        const y = (R + r * Math.cos(v)) * Math.sin(u);
+        const z = r * Math.sin(v);
+
+        const squareGeometry = new THREE.PlaneGeometry(0.4, 0.4);
+        const squareMaterial = new THREE.MeshPhongMaterial({
+          color: isWinning ? 0x4ade80 : 0xffffff,
+          side: THREE.DoubleSide
+        });
+        const square = new THREE.Mesh(squareGeometry, squareMaterial);
+        
+        square.position.set(x, y, z);
+        
+        const normal = new THREE.Vector3(
+          Math.cos(v) * Math.cos(u),
+          Math.cos(v) * Math.sin(u),
+          Math.sin(v)
+        );
+        square.lookAt(square.position.clone().add(normal));
+        
+        gridGroup.add(square);
+
+        if (value) {
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = 128;
+          canvas.height = 128;
+          context.fillStyle = value === 'X' ? '#2563eb' : '#dc2626';
+          context.font = 'bold 80px Arial';
+          context.textAlign = 'center';
+          context.textBaseline = 'middle';
+          context.fillText(value, 64, 64);
+
+          const texture = new THREE.CanvasTexture(canvas);
+          const textMaterial = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            side: THREE.DoubleSide
+          });
+          const textMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(0.35, 0.35),
+            textMaterial
+          );
+          textMesh.position.copy(square.position);
+          textMesh.position.add(normal.multiplyScalar(0.01));
+          textMesh.lookAt(textMesh.position.clone().add(normal));
+          gridGroup.add(textMesh);
+        }
+      }
+    }
+  }, [board, winningLine, viewMode]);
+
   const checkWinner = (squares) => {
     for (let line of allLines) {
       const [a, b, c] = line;
@@ -74,7 +233,6 @@ export default function TorusTicTacToe() {
     return null;
   };
 
-  // Computer AI
   const getComputerMove = (currentBoard) => {
     const emptyPositions = currentBoard
       .map((val, idx) => val === null ? idx : null)
@@ -82,7 +240,6 @@ export default function TorusTicTacToe() {
 
     if (emptyPositions.length === 0) return null;
 
-    // Check if computer can win
     for (let pos of emptyPositions) {
       const testBoard = [...currentBoard];
       testBoard[pos] = 'O';
@@ -91,7 +248,6 @@ export default function TorusTicTacToe() {
       }
     }
 
-    // Check if need to block player
     for (let pos of emptyPositions) {
       const testBoard = [...currentBoard];
       testBoard[pos] = 'X';
@@ -100,22 +256,55 @@ export default function TorusTicTacToe() {
       }
     }
 
-    // Prefer center positions (4, 5, 7, 8)
-    const centerPositions = [4, 5, 7, 8].filter(p => emptyPositions.includes(p));
-    if (centerPositions.length > 0) {
-      return centerPositions[Math.floor(Math.random() * centerPositions.length)];
+    let bestMove = null;
+    let maxThreats = 0;
+    
+    for (let pos of emptyPositions) {
+      const testBoard = [...currentBoard];
+      testBoard[pos] = 'O';
+      
+      let threats = 0;
+      for (let nextPos of emptyPositions) {
+        if (nextPos === pos) continue;
+        const nextTestBoard = [...testBoard];
+        nextTestBoard[nextPos] = 'O';
+        if (checkWinner(nextTestBoard)) {
+          threats++;
+        }
+      }
+      
+      if (threats > maxThreats) {
+        maxThreats = threats;
+        bestMove = pos;
+      }
+    }
+    
+    if (bestMove !== null && maxThreats > 0) {
+      return bestMove;
     }
 
-    // Take corner (position 0)
-    if (emptyPositions.includes(0)) {
-      return 0;
+    for (let pos of emptyPositions) {
+      const testBoard = [...currentBoard];
+      testBoard[pos] = 'X';
+      
+      let opponentThreats = 0;
+      for (let nextPos of emptyPositions) {
+        if (nextPos === pos) continue;
+        const nextTestBoard = [...testBoard];
+        nextTestBoard[nextPos] = 'X';
+        if (checkWinner(nextTestBoard)) {
+          opponentThreats++;
+        }
+      }
+      
+      if (opponentThreats >= 2) {
+        return pos;
+      }
     }
 
-    // Take any remaining position
     return emptyPositions[Math.floor(Math.random() * emptyPositions.length)];
   };
 
-  // Trigger computer move when it's O's turn
   useEffect(() => {
     if (gameMode === 'computer' && !isXNext && !winner && allLines.length > 0) {
       setIsComputerThinking(true);
@@ -147,13 +336,6 @@ export default function TorusTicTacToe() {
     }
   };
 
-  const handleClick = (visualPos) => {
-    if (gameMode === 'computer' && !isXNext) return;
-    
-    const logicalPos = visualToLogical(visualPos);
-    makeMove(logicalPos);
-  };
-
   const resetGame = () => {
     setBoard(Array(9).fill(null));
     setIsXNext(true);
@@ -171,32 +353,37 @@ export default function TorusTicTacToe() {
     setGameMode(null);
     resetGame();
     setViewMode('compact');
-    setPanOffset({ x: 0, y: 0 });
+    setInfinitePanOffset({ x: 0, y: 0 });
+    setCompactPanOffset({ x: 0, y: 0 });
   };
 
-  // Infinite view handlers
   const handleMouseDown = (e) => {
-    if (viewMode === 'infinite') {
-      setIsDragging(true);
-      setHasDragged(false);
-      setDragStart({ x: e.clientX - panOffset.x, y: e.clientY - panOffset.y });
-    }
+    setIsDragging(true);
+    setHasDragged(false);
+    const currentOffset = viewMode === 'infinite' ? infinitePanOffset : compactPanOffset;
+    setDragStart({ x: e.clientX - currentOffset.x, y: e.clientY - currentOffset.y });
   };
 
   const handleMouseMove = (e) => {
-    if (isDragging && viewMode === 'infinite') {
-      const movedX = Math.abs(e.clientX - dragStart.x - panOffset.x);
-      const movedY = Math.abs(e.clientY - dragStart.y - panOffset.y);
+    if (isDragging) {
+      const currentOffset = viewMode === 'infinite' ? infinitePanOffset : compactPanOffset;
+      const movedX = Math.abs(e.clientX - dragStart.x - currentOffset.x);
+      const movedY = Math.abs(e.clientY - dragStart.y - currentOffset.y);
       
-      // Only consider it a drag if moved more than 5 pixels
       if (movedX > 5 || movedY > 5) {
         setHasDragged(true);
       }
       
-      setPanOffset({
+      const newOffset = {
         x: e.clientX - dragStart.x,
         y: e.clientY - dragStart.y
-      });
+      };
+      
+      if (viewMode === 'infinite') {
+        setInfinitePanOffset(newOffset);
+      } else {
+        setCompactPanOffset(newOffset);
+      }
     }
   };
 
@@ -204,77 +391,99 @@ export default function TorusTicTacToe() {
     setIsDragging(false);
   };
 
-  const handleInfiniteClick = (e) => {
-    if (viewMode !== 'infinite' || hasDragged) return;
+  const handleCanvasClick = (e, isCompact = false) => {
+    if (hasDragged) return;
     
-    const rect = canvasRef.current.getBoundingClientRect();
+    const canvas = isCompact ? compactCanvasRef.current : canvasRef.current;
+    const panOffset = isCompact ? compactPanOffset : infinitePanOffset;
+    const rect = canvas.getBoundingClientRect();
     const squareSize = 80;
     
-    // Get click position relative to viewport center, accounting for pan
-    const clickX = e.clientX - rect.left - 300;
-    const clickY = e.clientY - rect.top - 300;
+    const centerOffset = isCompact ? 126 : 300;
+    const clickX = e.clientX - rect.left - centerOffset;
+    const clickY = e.clientY - rect.top - centerOffset;
     
-    // Adjust for pan offset to get actual grid position
     const gridX = clickX - panOffset.x;
     const gridY = clickY - panOffset.y;
     
-    // Use Math.floor for proper grid alignment
     const col = Math.floor(gridX / squareSize);
     const row = Math.floor(gridY / squareSize);
     
-    // Map to logical position (3x3 with wrapping)
-    // Need to handle negative modulo properly
     const logicalCol = ((col % 3) + 3) % 3;
     const logicalRow = ((row % 3) + 3) % 3;
     const logicalPos = logicalRow * 3 + logicalCol;
     
-    console.log('Click:', {clickX, clickY, gridX, gridY, row, col, logicalRow, logicalCol, logicalPos});
-    
     makeMove(logicalPos);
   };
 
-  const renderSquare = (visualPos) => {
-    const logicalPos = visualToLogical(visualPos);
-    const value = board[logicalPos];
-    const isWinning = winningLine.includes(logicalPos);
+  const renderCompactView = () => {
+    const squareSize = 80;
+    const squares = [];
     
-    const isCorner = [0, 3, 12, 15].includes(visualPos);
-    const isEdge = [1, 2, 4, 7, 8, 11, 13, 14].includes(visualPos);
+    const viewWidth = 252;
+    const viewHeight = 252;
+    const tileSize = 3 * squareSize;
     
-    return (
-      <button
-        key={visualPos}
-        onClick={() => handleClick(visualPos)}
-        disabled={isComputerThinking}
-        className={`
-          w-20 h-20 text-3xl font-bold transition-all
-          ${isWinning ? 'bg-green-400 text-white' : isCorner ? 'bg-purple-50' : isEdge ? 'bg-blue-50' : 'bg-white'}
-          ${!isWinning && !value && !winner && !isComputerThinking ? 'hover:bg-gray-100' : ''}
-          ${value === 'X' ? 'text-blue-600' : 'text-red-600'}
-          border border-gray-400
-          ${!value && !winner && !isComputerThinking ? 'cursor-pointer' : 'cursor-default'}
-          ${isComputerThinking ? 'opacity-70' : ''}
-        `}
-      >
-        {value}
-      </button>
-    );
+    const minTileX = Math.floor((-compactPanOffset.x - viewWidth / 2) / tileSize) - 1;
+    const maxTileX = Math.ceil((-compactPanOffset.x + viewWidth / 2) / tileSize) + 1;
+    const minTileY = Math.floor((-compactPanOffset.y - viewHeight / 2) / tileSize) - 1;
+    const maxTileY = Math.ceil((-compactPanOffset.y + viewHeight / 2) / tileSize) + 1;
+    
+    for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
+      for (let tileX = minTileX; tileX <= maxTileX; tileX++) {
+        for (let localRow = 0; localRow < 3; localRow++) {
+          for (let localCol = 0; localCol < 3; localCol++) {
+            const logicalPos = localRow * 3 + localCol;
+            const value = board[logicalPos];
+            const isWinning = winningLine.includes(logicalPos);
+            
+            const x = (tileX * 3 + localCol) * squareSize;
+            const y = (tileY * 3 + localRow) * squareSize;
+            
+            squares.push(
+              <g key={`${tileX}-${tileY}-${localRow}-${localCol}`}>
+                <rect
+                  x={x}
+                  y={y}
+                  width={squareSize}
+                  height={squareSize}
+                  fill={isWinning ? '#4ade80' : '#ffffff'}
+                  stroke="#9ca3af"
+                  strokeWidth="1"
+                />
+                {value && (
+                  <text
+                    x={x + squareSize / 2}
+                    y={y + squareSize / 2}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize="32"
+                    fontWeight="bold"
+                    fill={value === 'X' ? '#2563eb' : '#dc2626'}
+                  >
+                    {value}
+                  </text>
+                )}
+              </g>
+            );
+          }
+        }
+      }
+    }
+    
+    return squares;
   };
 
-  // Render infinite tiling view
   const renderInfiniteView = () => {
     const squareSize = 80;
-    
-    // Calculate which tiles are visible based on pan offset
     const viewWidth = 600;
     const viewHeight = 600;
-    const tileSize = 3 * squareSize; // Each tile is 3x3 squares
+    const tileSize = 3 * squareSize;
     
-    // Calculate tile range to render (with extra padding for smooth panning)
-    const minTileX = Math.floor((-panOffset.x - viewWidth / 2) / tileSize) - 2;
-    const maxTileX = Math.ceil((-panOffset.x + viewWidth / 2) / tileSize) + 2;
-    const minTileY = Math.floor((-panOffset.y - viewHeight / 2) / tileSize) - 2;
-    const maxTileY = Math.ceil((-panOffset.y + viewHeight / 2) / tileSize) + 2;
+    const minTileX = Math.floor((-infinitePanOffset.x - viewWidth / 2) / tileSize) - 2;
+    const maxTileX = Math.ceil((-infinitePanOffset.x + viewWidth / 2) / tileSize) + 2;
+    const minTileY = Math.floor((-infinitePanOffset.y - viewHeight / 2) / tileSize) - 2;
+    const maxTileY = Math.ceil((-infinitePanOffset.y + viewHeight / 2) / tileSize) + 2;
     
     const squares = [];
     for (let tileY = minTileY; tileY <= maxTileY; tileY++) {
@@ -322,7 +531,6 @@ export default function TorusTicTacToe() {
     return squares;
   };
 
-  // Menu screen
   if (gameMode === null) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-8">
@@ -360,7 +568,6 @@ export default function TorusTicTacToe() {
     );
   }
 
-  // Game screen
   const isBoardFull = board.every(square => square !== null);
   const status = winner 
     ? `Winner: ${winner}!` 
@@ -396,7 +603,7 @@ export default function TorusTicTacToe() {
             }`}
           >
             <Grid3x3 size={18} />
-            Compact View
+            Compact
           </button>
           <button
             onClick={() => setViewMode('infinite')}
@@ -407,19 +614,46 @@ export default function TorusTicTacToe() {
             }`}
           >
             <Maximize2 size={18} />
-            Infinite View
+            Infinite
+          </button>
+          <button
+            onClick={() => setViewMode('3d')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              viewMode === '3d' 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <Box size={18} />
+            3D Torus
           </button>
         </div>
 
         {viewMode === 'compact' ? (
           <div className="mb-6 flex justify-center">
-            <div className="inline-block">
-              <div className="grid grid-cols-4 gap-0 border-4 border-purple-300 rounded-lg overflow-hidden">
-                {Array(16).fill(null).map((_, i) => renderSquare(i))}
-              </div>
+            <div 
+              className="border-4 border-purple-300 rounded-lg overflow-hidden bg-gray-100"
+              style={{ width: '252px', height: '252px', cursor: isDragging ? 'grabbing' : 'grab' }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onClick={(e) => handleCanvasClick(e, true)}
+            >
+              <svg 
+                ref={compactCanvasRef}
+                width="252" 
+                height="252" 
+                viewBox="0 0 252 252"
+                style={{ overflow: 'visible' }}
+              >
+                <g transform={`translate(${126 + compactPanOffset.x}, ${126 + compactPanOffset.y})`}>
+                  {renderCompactView()}
+                </g>
+              </svg>
             </div>
           </div>
-        ) : (
+        ) : viewMode === 'infinite' ? (
           <div className="mb-6 flex justify-center">
             <div 
               className="border-4 border-purple-300 rounded-lg overflow-hidden bg-gray-100"
@@ -428,7 +662,7 @@ export default function TorusTicTacToe() {
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
-              onClick={handleInfiniteClick}
+              onClick={(e) => handleCanvasClick(e, false)}
             >
               <svg 
                 ref={canvasRef}
@@ -437,17 +671,44 @@ export default function TorusTicTacToe() {
                 viewBox="0 0 600 600"
                 style={{ overflow: 'visible' }}
               >
-                <g transform={`translate(${300 + panOffset.x}, ${300 + panOffset.y})`}>
+                <g transform={`translate(${300 + infinitePanOffset.x}, ${300 + infinitePanOffset.y})`}>
                   {renderInfiniteView()}
                 </g>
               </svg>
             </div>
           </div>
+        ) : (
+          <div className="mb-6 flex justify-center">
+            <div 
+              ref={torusContainerRef}
+              className="border-4 border-purple-300 rounded-lg overflow-hidden flex items-center justify-center"
+              style={{ width: '600px', height: '600px', background: 'linear-gradient(to bottom right, #f9fafb, #e5e7eb)' }}
+            >
+              {!window.THREE && (
+                <div className="text-center p-8">
+                  <p className="text-gray-600 mb-2">3D view requires Three.js</p>
+                  <p className="text-sm text-gray-500">This feature is not available in the current environment</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {viewMode === 'compact' && (
+          <p className="text-sm text-gray-600 text-center mb-4">
+            This is a 3×3 board that tiles infinitely • Drag to see how it wraps!
+          </p>
         )}
 
         {viewMode === 'infinite' && (
           <p className="text-sm text-gray-600 text-center mb-4">
             Click and drag to pan • Click a square to play
+          </p>
+        )}
+
+        {viewMode === '3d' && (
+          <p className="text-sm text-gray-600 text-center mb-4">
+            Watch the rotating 3D torus • The 9 squares wrap around the donut shape
           </p>
         )}
 
@@ -472,7 +733,7 @@ export default function TorusTicTacToe() {
           <div className="text-sm text-gray-600 max-w-md text-center space-y-2">
             <p className="font-semibold">How it works:</p>
             <p>This 3×3 game has toroidal topology - it wraps both horizontally AND vertically!</p>
-            <p className="text-xs">In compact view: 🟪 Purple corners = all the same square | 🔵 Blue edges = paired with opposite edge</p>
+            <p className="text-xs">Each square represents the same position across all tiles due to wrapping</p>
           </div>
         </div>
       </div>
@@ -480,6 +741,5 @@ export default function TorusTicTacToe() {
   );
 }
 
-// At the very end of the file, after the component definition
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<TorusTicTacToe />);
