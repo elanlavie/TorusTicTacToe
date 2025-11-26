@@ -400,13 +400,26 @@ function render() {
     container.innerHTML = `<svg id="compactSVG" width="252" height="252"></svg>`;
     const svg = document.getElementById("compactSVG");
 
-    const onClick = (cx, cy) => {
-      const col = Math.floor((cx - 126 - compactOffset.x)/80);
-      const row = Math.floor((cy - 126 - compactOffset.y)/80);
-      const r = ((row % 3) + 3) % 3;
-      const c = ((col % 3) + 3) % 3;
-      makeMove(r*3 + c);
-    };
+const onClick = (cx, cy) => {
+  const rect = svg.getBoundingClientRect();
+
+  // convert screen click → svg coordinates
+  const svgX = cx - rect.width / 2;
+  const svgY = cy - rect.height / 2;
+
+  // apply panning
+  const gridX = svgX - compactOffset.x;
+  const gridY = svgY - compactOffset.y;
+
+  // convert to tile index
+  const col = Math.floor(gridX / 80);
+  const row = Math.floor(gridY / 80);
+
+  const logicalCol = ((col % 3) + 3) % 3;
+  const logicalRow = ((row % 3) + 3) % 3;
+
+  makeMove(logicalRow * 3 + logicalCol);
+};
 
     attachPanHandlers(container, compactOffset, onClick);
     renderCompact(svg, compactOffset);
@@ -420,8 +433,27 @@ function render() {
     const svg = document.getElementById("infiniteSVG");
 
     const onClick = (cx, cy) => {
-      const col = Math.floor((cx - 300 - infiniteOffset.x)/80);
-      const row = Math.floor((cy - 300 - infiniteOffset.y)/80);
+      const onClick = (cx, cy) => {
+  const rect = svg.getBoundingClientRect();
+
+  // convert screen click → svg coordinates
+  const svgX = cx - rect.width / 2;
+  const svgY = cy - rect.height / 2;
+
+  // apply panning
+  const gridX = svgX - infiniteOffset.x;
+  const gridY = svgY - infiniteOffset.y;
+
+  // convert to tile index
+  const col = Math.floor(gridX / 80);
+  const row = Math.floor(gridY / 80);
+
+  const logicalCol = ((col % 3) + 3) % 3;
+  const logicalRow = ((row % 3) + 3) % 3;
+
+  makeMove(logicalRow * 3 + logicalCol);
+};
+
       const r = ((row % 3) + 3) % 3;
       const c = ((col % 3) + 3) % 3;
       makeMove(r*3 + c);
