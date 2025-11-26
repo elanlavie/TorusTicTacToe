@@ -1,4 +1,3 @@
-
 const { useState, useEffect, useRef } = React;
 const { RotateCcw, User, Cpu, Grid3x3, Maximize2, Box } = lucide;
 
